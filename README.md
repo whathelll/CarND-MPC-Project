@@ -3,6 +3,94 @@ Self-Driving Car Engineer Nanodegree Program
 
 ---
 
+## Project writeup
+### The model
+The MPC model state is:
+```
+x - x position of the car. 0 with car being the origin
+y - y position of the car. 0 with car being the origin
+psi - the current yaw of the car. 0 at time 0 with car being the origin
+v - the velocity of the car in m/s
+cte - the cross track error, shortest distance from car to the planned path. Achieved by evaluating the reference path polynomial and evaluating at point of vehicle.
+epsi - error in our yaw from desired yaw. Essentially the difference of the reference path tangential gradient vs current yaw.
+```
+The actuators:
+```
+delta - the steering angle, restricted between +-25 degrees.
+a - acceleration, between -1 and 1.
+```
+
+update equations:
+![alt equations](./img/equations.png "equations")
+
+
+### Timestep Length and Elapsed Duration (N & dt)
+It appeared when N is too high the algorithm would lag significantly. When N is too low it'd be wildly off road.
+
+When dt is too low then N would need to be very high just to optimize for 1-2 seconds into the future. When dt is too high it'd optimize for the vehicle to turn too early.
+
+A balance is required so N*dt is sufficient time into the future.
+
+Range of N experimented with: 5 - 40
+Range of dt experimented with: 0.025 - 0.5
+
+Settled on N=10, dt=0.2
+
+### Polynomial Fitting and MPC Preprocessing
+The simulator provided a set of path points forward in the form of vector<double> ptsx & ptsx. These points were global positioning points. The simulator also provided the car's location globally.
+
+Since it's easier to measure cross track error and psi error from the perspective of the vehicle's front direction, being the X axis, we calculate these points with respect to the car's location and rotate from global position to coordinates where the car is the centre.
+```
+//use negative psi to rotate the point towards 0, 0 being the direct front of the car
+float s = sin(-psi);
+float c = cos(-psi);
+
+for(std::size_t i = 0; i < ptsx.size(); i++){
+    double tempx = ptsx[i] - px;
+    double tempy = ptsy[i] - py;
+
+    ptsx[i] = tempx * c - tempy * s;
+    ptsy[i] = tempx * s + tempy * c;
+}
+```
+
+Once I could visualize the desired path in the simulator I fitted a 3rd degree polynomial to the points.
+```
+Eigen::VectorXd eigenX = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(ptsx.data(), ptsx.size());
+Eigen::VectorXd eigenY = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(ptsy.data(), ptsy.size());
+
+Eigen::VectorXd coeffs = polyfit(eigenX, eigenY, 3);
+```
+This gives us a model for the vehicle's desired trajectory.
+
+Velocity was in mph so we need to convert this to m/s. This tripped me up for awhile.
+
+### Model Predictive Control with Latency
+Adding latency of 100ms threw off the controller significantly. The project mimics latency with the following:
+```
+this_thread::sleep_for(chrono::milliseconds(100));
+```
+To cater for latency, I implemented as suggested in the course material: to project forward 100ms before passing the state into the MPC.
+```
+double x = 0;
+double y = 0;
+psi = 0; //psi will be 0 since 0 will always be front
+
+//simulate latency of 100ms
+double latency = 0.1;
+x = x + v * cos(psi) * latency;
+y = y + v * sin(psi) * latency;
+psi = - (v / 2.67) * delta * latency;
+double cte = polyeval(coeffs, x);
+double epsi = psi - atan(polyeval(coeffs, x));
+v = v + a * latency;
+```
+
+Cost function weights had to be tuned again as well as the time steps and delta t.
+
+
+
+
 ## Dependencies
 
 * cmake >= 3.5
@@ -19,7 +107,7 @@ Self-Driving Car Engineer Nanodegree Program
   * Run either `install-mac.sh` or `install-ubuntu.sh`.
   * If you install from source, checkout to commit `e94b6e1`, i.e.
     ```
-    git clone https://github.com/uWebSockets/uWebSockets 
+    git clone https://github.com/uWebSockets/uWebSockets
     cd uWebSockets
     git checkout e94b6e1
     ```
@@ -31,7 +119,7 @@ Self-Driving Car Engineer Nanodegree Program
   * Mac: `brew install ipopt`
   * Linux
     * You will need a version of Ipopt 3.12.1 or higher. The version available through `apt-get` is 3.11.x. If you can get that version to work great but if not there's a script `install_ipopt.sh` that will install Ipopt. You just need to download the source from the Ipopt [releases page](https://www.coin-or.org/download/source/Ipopt/) or the [Github releases](https://github.com/coin-or/Ipopt/releases) page.
-    * Then call `install_ipopt.sh` with the source directory as the first argument, ex: `sudo bash install_ipopt.sh Ipopt-3.12.1`. 
+    * Then call `install_ipopt.sh` with the source directory as the first argument, ex: `sudo bash install_ipopt.sh Ipopt-3.12.1`.
   * Windows: TODO. If you can use the Linux subsystem and follow the Linux instructions.
 * [CppAD](https://www.coin-or.org/CppAD/)
   * Mac: `brew install cppad`

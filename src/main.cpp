@@ -132,16 +132,14 @@ int main() {
           double x = 0;
           double y = 0;
           psi = 0; //psi will be 0 since 0 will always be front
-          double cte = polyeval(coeffs, x) - y;
-          double epsi = psi - atan(coeffs[1]);  //since x = 0 then the derivative is just the coefficient 1 (2nd one)
 
           //simulate latency of 100ms
           double latency = 0.1;
 	  x = x + v * cos(psi) * latency;
 	  y = y + v * sin(psi) * latency;
 	  psi = - (v / 2.67) * delta * latency;
-	  cte = polyeval(coeffs, x); //cte + v * sin(epsi) * latency;
-	  epsi = atan(polyeval(coeffs, x)); //epsi + v / 2.67 * delta * latency;
+	  double cte = polyeval(coeffs, x);
+	  double epsi = psi - atan(polyeval(coeffs, x));
 	  v = v + a * latency;
 
           Eigen::VectorXd state(6);
